@@ -8,4 +8,4 @@
 - [x] Add focused unit tests for progress/order helpers.
 - [x] Run typecheck and tests.
 - [x] Verify iOS bundle export.
-- [ ] Manually verify in iOS simulator.
+- [x] Manually verify in iOS simulator.
