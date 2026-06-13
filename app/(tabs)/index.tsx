@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Alert, FlatList, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, Keyboard, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 
 import {
@@ -22,6 +22,7 @@ export default function LogScreen() {
   const [activeWorkout, setActiveWorkout] = useState<WorkoutDetail | null>(null);
   const [exercises, setExercises] = useState<ExerciseProgress[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isExercisePickerVisible, setIsExercisePickerVisible] = useState(false);
   const [query, setQuery] = useState('');
   const [muscleGroupFilter, setMuscleGroupFilter] = useState<string | null>(null);
   const [equipmentFilter, setEquipmentFilter] = useState<string | null>(null);
@@ -52,6 +53,7 @@ export default function LogScreen() {
 
     await addExerciseToWorkout(activeWorkout.id, exerciseId);
     await load();
+    setIsExercisePickerVisible(false);
   }
 
   async function handleFinishWorkout() {
@@ -93,7 +95,7 @@ export default function LogScreen() {
               </View>
             ) : (
               <View style={sharedStyles.card}>
-                <View style={sharedStyles.row}>
+                <View style={styles.workoutHeaderRow}>
                   <View>
                     <Text style={styles.cardTitle}>Workout in progress</Text>
                     <Text style={sharedStyles.small}>Started {new Date(activeWorkout.startedAt).toLocaleString()}</Text>
@@ -103,113 +105,186 @@ export default function LogScreen() {
               </View>
             )}
 
-            <View style={sharedStyles.card}>
-              <View style={sharedStyles.row}>
-                <Text style={styles.cardTitle}>Add Exercise</Text>
-                {hasActiveFilters ? (
-                  <Pressable accessibilityRole="button" hitSlop={8} onPress={clearFilters}>
-                    <Text style={styles.linkText}>Clear</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-              {exercises.length === 0 ? (
-                <Text style={sharedStyles.small}>Starter exercises will appear after the catalog initializes.</Text>
-              ) : (
-                <View style={styles.pickerStack}>
-                  <TextInput onChangeText={setQuery} placeholder="Search exercises" style={sharedStyles.input} value={query} />
-                  <View style={styles.filterGroup}>
-                    <Text style={sharedStyles.label}>Muscle</Text>
-                    <View style={styles.filterChips}>
-                      <FilterChip label="All" selected={!muscleGroupFilter} onPress={() => setMuscleGroupFilter(null)} />
-                      {filterOptions.muscleGroups.map((option) => (
-                        <FilterChip
-                          key={option}
-                          label={option}
-                          selected={muscleGroupFilter === option}
-                          onPress={() => setMuscleGroupFilter(option)}
-                        />
-                      ))}
-                    </View>
+            {activeWorkout ? (
+              <View style={sharedStyles.card}>
+                <View style={styles.workoutHeaderRow}>
+                  <View style={styles.copy}>
+                    <Text style={styles.cardTitle}>Exercises</Text>
+                    <Text style={sharedStyles.small}>
+                      {activeWorkout.exercises.length === 0
+                        ? 'Add your first exercise to start logging sets.'
+                        : `${activeWorkout.exercises.length} in this workout`}
+                    </Text>
                   </View>
-                  <View style={styles.filterGroup}>
-                    <Text style={sharedStyles.label}>Equipment</Text>
-                    <View style={styles.filterChips}>
-                      <FilterChip label="All" selected={!equipmentFilter} onPress={() => setEquipmentFilter(null)} />
-                      {filterOptions.equipment.map((option) => (
-                        <FilterChip
-                          key={option}
-                          label={option}
-                          selected={equipmentFilter === option}
-                          onPress={() => setEquipmentFilter(option)}
-                        />
-                      ))}
-                    </View>
-                  </View>
-                  {filteredExercises.length === 0 ? (
-                    <Text style={sharedStyles.small}>No matching exercises. Adjust the search or filters.</Text>
-                  ) : (
-                    <View style={styles.exercisePicker}>
-                      {filteredExercises.map((exercise) => {
-                        const alreadyAdded = activeExerciseIds.has(exercise.id);
-                        const disabled = !activeWorkout || alreadyAdded;
-
-                        return (
-                          <Pressable
-                            accessibilityRole="button"
-                            disabled={disabled}
-                            key={exercise.id}
-                            onPress={() => handleAddExercise(exercise.id)}
-                            style={({ pressed }) => [
-                              styles.exerciseChip,
-                              alreadyAdded && styles.exerciseChipSelected,
-                              disabled && styles.exerciseChipDisabled,
-                              pressed && styles.pressed,
-                            ]}
-                          >
-                            <Text style={styles.exerciseChipText}>{exercise.name}</Text>
-                            <Text style={styles.exerciseChipMeta}>
-                              {alreadyAdded
-                                ? 'Already added'
-                                : activeWorkout
-                                  ? exerciseMetadataSummary(exercise)
-                                  : 'Start workout to add'}
-                            </Text>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  )}
+                  <AppButton label="Add Exercise" onPress={() => setIsExercisePickerVisible(true)} disabled={loading} />
                 </View>
-              )}
-            </View>
+              </View>
+            ) : null}
           </View>
         }
         ListEmptyComponent={
           activeWorkout ? (
-            <EmptyState title="No exercises yet" body="Choose an exercise above to start logging sets." />
+            <View style={sharedStyles.card}>
+              <Text style={styles.cardTitle}>No exercises yet</Text>
+              <Text style={sharedStyles.small}>Add an exercise and your set logging controls will appear here.</Text>
+              <AppButton label="Add First Exercise" onPress={() => setIsExercisePickerVisible(true)} disabled={loading} />
+            </View>
           ) : null
         }
         renderItem={({ item }) => <ActiveExerciseCard exercise={item} onChanged={load} />}
+      />
+      <ExercisePickerModal
+        activeExerciseIds={activeExerciseIds}
+        equipmentFilter={equipmentFilter}
+        exercises={exercises}
+        filterOptions={filterOptions}
+        filteredExercises={filteredExercises}
+        hasActiveFilters={hasActiveFilters}
+        muscleGroupFilter={muscleGroupFilter}
+        onClearFilters={clearFilters}
+        onClose={() => setIsExercisePickerVisible(false)}
+        onSelectExercise={handleAddExercise}
+        query={query}
+        setEquipmentFilter={setEquipmentFilter}
+        setMuscleGroupFilter={setMuscleGroupFilter}
+        setQuery={setQuery}
+        visible={Boolean(activeWorkout && isExercisePickerVisible)}
       />
     </Screen>
   );
 }
 
+type ExercisePickerModalProps = {
+  activeExerciseIds: Set<number>;
+  equipmentFilter: string | null;
+  exercises: ExerciseProgress[];
+  filterOptions: { muscleGroups: string[]; equipment: string[] };
+  filteredExercises: ExerciseProgress[];
+  hasActiveFilters: boolean;
+  muscleGroupFilter: string | null;
+  onClearFilters: () => void;
+  onClose: () => void;
+  onSelectExercise: (exerciseId: number) => void;
+  query: string;
+  setEquipmentFilter: (filter: string | null) => void;
+  setMuscleGroupFilter: (filter: string | null) => void;
+  setQuery: (query: string) => void;
+  visible: boolean;
+};
+
+function ExercisePickerModal({
+  activeExerciseIds,
+  equipmentFilter,
+  exercises,
+  filterOptions,
+  filteredExercises,
+  hasActiveFilters,
+  muscleGroupFilter,
+  onClearFilters,
+  onClose,
+  onSelectExercise,
+  query,
+  setEquipmentFilter,
+  setMuscleGroupFilter,
+  setQuery,
+  visible,
+}: ExercisePickerModalProps) {
+  return (
+    <Modal animationType="slide" onRequestClose={onClose} presentationStyle="pageSheet" visible={visible}>
+      <View style={styles.modalRoot}>
+        <View style={styles.modalHeader}>
+          <View style={styles.copy}>
+            <Text style={styles.modalTitle}>Add Exercise</Text>
+            <Text style={sharedStyles.small}>Search your catalog and tap an exercise to add it.</Text>
+          </View>
+          <Pressable accessibilityRole="button" hitSlop={8} onPress={onClose}>
+            <Text style={styles.linkText}>Close</Text>
+          </Pressable>
+        </View>
+
+        {exercises.length === 0 ? (
+          <EmptyState title="No exercises yet" body="Starter exercises will appear after the catalog initializes." />
+        ) : (
+          <ScrollView contentContainerStyle={styles.pickerScrollContent} keyboardShouldPersistTaps="handled">
+            <View style={sharedStyles.row}>
+              <Text style={styles.cardTitle}>Choose Exercise</Text>
+              {hasActiveFilters ? (
+                <Pressable accessibilityRole="button" hitSlop={8} onPress={onClearFilters}>
+                  <Text style={styles.linkText}>Clear</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            <TextInput onChangeText={setQuery} placeholder="Search exercises" style={sharedStyles.input} value={query} />
+            <View style={styles.filterGroup}>
+              <Text style={sharedStyles.label}>Muscle</Text>
+              <View style={styles.filterChips}>
+                <FilterChip label="All" selected={!muscleGroupFilter} onPress={() => setMuscleGroupFilter(null)} />
+                {filterOptions.muscleGroups.map((option) => (
+                  <FilterChip
+                    key={option}
+                    label={option}
+                    selected={muscleGroupFilter === option}
+                    onPress={() => setMuscleGroupFilter(option)}
+                  />
+                ))}
+              </View>
+            </View>
+            <View style={styles.filterGroup}>
+              <Text style={sharedStyles.label}>Equipment</Text>
+              <View style={styles.filterChips}>
+                <FilterChip label="All" selected={!equipmentFilter} onPress={() => setEquipmentFilter(null)} />
+                {filterOptions.equipment.map((option) => (
+                  <FilterChip
+                    key={option}
+                    label={option}
+                    selected={equipmentFilter === option}
+                    onPress={() => setEquipmentFilter(option)}
+                  />
+                ))}
+              </View>
+            </View>
+            {filteredExercises.length === 0 ? (
+              <Text style={sharedStyles.small}>No matching exercises. Adjust the search or filters.</Text>
+            ) : (
+              <View style={styles.exercisePicker}>
+                {filteredExercises.map((exercise) => {
+                  const alreadyAdded = activeExerciseIds.has(exercise.id);
+
+                  return (
+                    <Pressable
+                      accessibilityRole="button"
+                      disabled={alreadyAdded}
+                      key={exercise.id}
+                      onPress={() => onSelectExercise(exercise.id)}
+                      style={({ pressed }) => [
+                        styles.exerciseChip,
+                        alreadyAdded && styles.exerciseChipSelected,
+                        alreadyAdded && styles.exerciseChipDisabled,
+                        pressed && !alreadyAdded && styles.pressed,
+                      ]}
+                    >
+                      <Text style={styles.exerciseChipText}>{exercise.name}</Text>
+                      <Text style={styles.exerciseChipMeta}>
+                        {alreadyAdded ? 'Already added' : exerciseMetadataSummary(exercise)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+          </ScrollView>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
 function ActiveExerciseCard({ exercise, onChanged }: { exercise: WorkoutExerciseWithSets; onChanged: () => Promise<void> }) {
-  const [editingSet, setEditingSet] = useState<SetEntry | null>(null);
   const [reps, setReps] = useState('');
   const [weight, setWeight] = useState('');
   const [notes, setNotes] = useState('');
 
-  function beginEdit(set: SetEntry) {
-    setEditingSet(set);
-    setReps(String(set.reps));
-    setWeight(String(set.weight));
-    setNotes(set.notes ?? '');
-  }
-
   function resetForm() {
-    setEditingSet(null);
     setReps('');
     setWeight('');
     setNotes('');
@@ -224,14 +299,21 @@ function ActiveExerciseCard({ exercise, onChanged }: { exercise: WorkoutExercise
       return;
     }
 
-    if (editingSet) {
-      await updateSetEntry(editingSet.id, parsedReps, parsedWeight, notes);
-    } else {
-      await addSetEntry(exercise.id, parsedReps, parsedWeight, notes);
-    }
+    await addSetEntry(exercise.id, parsedReps, parsedWeight, notes);
 
     Keyboard.dismiss();
     resetForm();
+    await onChanged();
+  }
+
+  async function repeatLatestSet() {
+    const latestSet = exercise.sets.at(-1);
+
+    if (!latestSet) {
+      return;
+    }
+
+    await addSetEntry(exercise.id, latestSet.reps, latestSet.weight, latestSet.notes ?? undefined);
     await onChanged();
   }
 
@@ -242,24 +324,18 @@ function ActiveExerciseCard({ exercise, onChanged }: { exercise: WorkoutExercise
 
   return (
     <View style={sharedStyles.card}>
-      <Text style={styles.cardTitle}>{exercise.exerciseName}</Text>
-
-      {exercise.sets.length === 0 ? <Text style={sharedStyles.small}>No sets logged for this exercise yet.</Text> : null}
+      <View style={styles.exerciseCardHeader}>
+        <View style={styles.copy}>
+          <Text style={styles.cardTitle}>{exercise.exerciseName}</Text>
+          <Text style={sharedStyles.small}>
+            {exercise.sets.length === 0 ? 'No sets logged for this exercise yet.' : `${exercise.sets.length} sets logged`}
+          </Text>
+        </View>
+        {exercise.sets.length > 0 ? <AppButton label="Repeat" onPress={repeatLatestSet} variant="secondary" /> : null}
+      </View>
 
       {exercise.sets.map((set) => (
-        <View key={set.id} style={styles.setRow}>
-          <Text style={styles.setText}>
-            Set {set.setNumber}: {set.reps} reps at {set.weight} lb
-          </Text>
-          <View style={styles.setActions}>
-            <Pressable onPress={() => beginEdit(set)} hitSlop={8}>
-              <Text style={styles.linkText}>Edit</Text>
-            </Pressable>
-            <Pressable onPress={() => removeSet(set)} hitSlop={8}>
-              <Text style={styles.deleteText}>Delete</Text>
-            </Pressable>
-          </View>
-        </View>
+        <EditableSetRow key={set.id} onChanged={onChanged} onDelete={() => removeSet(set)} set={set} />
       ))}
 
       <View style={styles.setForm}>
@@ -280,9 +356,90 @@ function ActiveExerciseCard({ exercise, onChanged }: { exercise: WorkoutExercise
       </View>
       <TextInput onChangeText={setNotes} placeholder="Notes (optional)" style={sharedStyles.input} value={notes} />
       <View style={styles.formActions}>
-        {editingSet ? <AppButton label="Cancel" onPress={resetForm} variant="secondary" /> : null}
-        <AppButton label={editingSet ? 'Save Set' : 'Add Set'} onPress={saveSet} />
+        <AppButton label="Add Set" onPress={saveSet} />
       </View>
+    </View>
+  );
+}
+
+function EditableSetRow({ set, onChanged, onDelete }: { set: SetEntry; onChanged: () => Promise<void>; onDelete: () => void }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editReps, setEditReps] = useState(String(set.reps));
+  const [editWeight, setEditWeight] = useState(String(set.weight));
+  const [editNotes, setEditNotes] = useState(set.notes ?? '');
+
+  function beginEdit() {
+    setEditReps(String(set.reps));
+    setEditWeight(String(set.weight));
+    setEditNotes(set.notes ?? '');
+    setIsEditing(true);
+  }
+
+  function cancelEdit() {
+    setEditReps(String(set.reps));
+    setEditWeight(String(set.weight));
+    setEditNotes(set.notes ?? '');
+    setIsEditing(false);
+  }
+
+  async function saveEdit() {
+    const parsedReps = Number.parseInt(editReps, 10);
+    const parsedWeight = Number.parseFloat(editWeight);
+
+    if (!Number.isFinite(parsedReps) || parsedReps <= 0 || !Number.isFinite(parsedWeight) || parsedWeight < 0) {
+      Alert.alert('Check the set', 'Reps must be greater than 0 and weight must be 0 or higher.');
+      return;
+    }
+
+    await updateSetEntry(set.id, parsedReps, parsedWeight, editNotes);
+    Keyboard.dismiss();
+    setIsEditing(false);
+    await onChanged();
+  }
+
+  return (
+    <View style={styles.setRow}>
+      {isEditing ? (
+        <View style={styles.inlineEditStack}>
+          <Text style={styles.setText}>Set {set.setNumber}</Text>
+          <View style={styles.setForm}>
+            <TextInput
+              keyboardType="number-pad"
+              onChangeText={setEditReps}
+              placeholder="Reps"
+              style={[sharedStyles.input, styles.compactInput]}
+              value={editReps}
+            />
+            <TextInput
+              keyboardType="decimal-pad"
+              onChangeText={setEditWeight}
+              placeholder="Weight"
+              style={[sharedStyles.input, styles.compactInput]}
+              value={editWeight}
+            />
+          </View>
+          <TextInput onChangeText={setEditNotes} placeholder="Notes (optional)" style={sharedStyles.input} value={editNotes} />
+          <View style={styles.formActions}>
+            <AppButton label="Cancel" onPress={cancelEdit} variant="secondary" />
+            <AppButton label="Save" onPress={saveEdit} />
+          </View>
+        </View>
+      ) : (
+        <>
+          <Text style={styles.setText}>
+            Set {set.setNumber}: {set.reps} reps at {set.weight} lb
+          </Text>
+          {set.notes ? <Text style={sharedStyles.small}>{set.notes}</Text> : null}
+          <View style={styles.setActions}>
+            <Pressable accessibilityRole="button" onPress={beginEdit} hitSlop={8}>
+              <Text style={styles.linkText}>Edit</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" onPress={onDelete} hitSlop={8}>
+              <Text style={styles.deleteText}>Delete</Text>
+            </Pressable>
+          </View>
+        </>
+      )}
     </View>
   );
 }
@@ -291,9 +448,37 @@ const styles = StyleSheet.create({
   headerStack: {
     gap: spacing.md,
   },
+  workoutHeaderRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+  },
   cardTitle: {
     color: colors.text,
     fontSize: 18,
+    fontWeight: '700',
+  },
+  copy: {
+    flex: 1,
+  },
+  modalRoot: {
+    backgroundColor: colors.background,
+    flex: 1,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  modalHeader: {
+    alignItems: 'flex-start',
+    flexDirection: 'row',
+    gap: spacing.md,
+    justifyContent: 'space-between',
+    paddingTop: spacing.xl,
+  },
+  modalTitle: {
+    color: colors.text,
+    fontSize: 24,
     fontWeight: '700',
   },
   exercisePicker: {
@@ -301,8 +486,9 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.sm,
   },
-  pickerStack: {
+  pickerScrollContent: {
     gap: spacing.sm,
+    paddingBottom: spacing.xl,
   },
   filterGroup: {
     gap: spacing.xs,
@@ -343,6 +529,13 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingTop: spacing.sm,
   },
+  exerciseCardHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.md,
+    justifyContent: 'space-between',
+  },
   setText: {
     color: colors.text,
     fontSize: 15,
@@ -367,7 +560,11 @@ const styles = StyleSheet.create({
   compactInput: {
     flex: 1,
   },
+  inlineEditStack: {
+    gap: spacing.sm,
+  },
   formActions: {
+    flexWrap: 'wrap',
     flexDirection: 'row',
     gap: spacing.sm,
     justifyContent: 'flex-end',
