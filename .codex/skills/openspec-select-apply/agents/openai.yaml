@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenSpec Select Apply"
+  short_description: "Pick a change, then run OpenSpec Apply"
+  default_prompt: "Use $openspec-select-apply to list OpenSpec changes and let me choose one to apply."
