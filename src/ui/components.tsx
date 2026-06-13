@@ -17,6 +17,13 @@ type ButtonProps = {
   disabled?: boolean;
 };
 
+type FilterChipProps = {
+  label: string;
+  selected?: boolean;
+  onPress: () => void;
+  disabled?: boolean;
+};
+
 export function Screen({ title, subtitle, children }: ScreenProps) {
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
@@ -62,6 +69,24 @@ export function EmptyState({ title, body }: { title: string; body: string }) {
       <Text style={styles.emptyTitle}>{title}</Text>
       <Text style={styles.emptyBody}>{body}</Text>
     </View>
+  );
+}
+
+export function FilterChip({ label, selected = false, onPress, disabled = false }: FilterChipProps) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.filterChip,
+        selected && styles.filterChipSelected,
+        disabled && styles.disabledFilterChip,
+        pressed && !disabled && styles.pressed,
+      ]}
+    >
+      <Text style={[styles.filterChipText, selected && styles.filterChipSelectedText]}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -178,5 +203,28 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 15,
     lineHeight: 21,
+  },
+  filterChip: {
+    alignItems: 'center',
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: 999,
+    minHeight: 36,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  filterChipSelected: {
+    backgroundColor: colors.primary,
+  },
+  disabledFilterChip: {
+    opacity: 0.45,
+  },
+  filterChipText: {
+    color: colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  filterChipSelectedText: {
+    color: colors.surface,
   },
 });

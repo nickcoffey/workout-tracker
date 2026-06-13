@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert, FlatList, Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 
@@ -13,14 +13,18 @@ import {
   startWorkout,
   updateSetEntry,
 } from '../../src/data/repository';
+import { exerciseFilterOptions, exerciseMetadataSummary, filterExercises } from '../../src/data/exerciseCatalog';
 import { ExerciseProgress, SetEntry, WorkoutDetail, WorkoutExerciseWithSets } from '../../src/data/types';
-import { EmptyState, AppButton, Screen, sharedStyles } from '../../src/ui/components';
+import { EmptyState, AppButton, FilterChip, Screen, sharedStyles } from '../../src/ui/components';
 import { colors, spacing } from '../../src/ui/theme';
 
 export default function LogScreen() {
   const [activeWorkout, setActiveWorkout] = useState<WorkoutDetail | null>(null);
   const [exercises, setExercises] = useState<ExerciseProgress[]>([]);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+  const [muscleGroupFilter, setMuscleGroupFilter] = useState<string | null>(null);
+  const [equipmentFilter, setEquipmentFilter] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     await initializeDatabase();
@@ -60,6 +64,18 @@ export default function LogScreen() {
   }
 
   const activeExerciseIds = new Set(activeWorkout?.exercises.map((exercise) => exercise.exerciseId) ?? []);
+  const filteredExercises = useMemo(
+    () => filterExercises(exercises, { query, muscleGroup: muscleGroupFilter, equipment: equipmentFilter }),
+    [equipmentFilter, exercises, muscleGroupFilter, query],
+  );
+  const filterOptions = useMemo(() => exerciseFilterOptions(exercises), [exercises]);
+  const hasActiveFilters = Boolean(query.trim() || muscleGroupFilter || equipmentFilter);
+
+  function clearFilters() {
+    setQuery('');
+    setMuscleGroupFilter(null);
+    setEquipmentFilter(null);
+  }
 
   return (
     <Screen title="Log" subtitle="Track today's workout as you go.">
@@ -88,27 +104,81 @@ export default function LogScreen() {
             )}
 
             <View style={sharedStyles.card}>
-              <Text style={styles.cardTitle}>Add Exercise</Text>
+              <View style={sharedStyles.row}>
+                <Text style={styles.cardTitle}>Add Exercise</Text>
+                {hasActiveFilters ? (
+                  <Pressable accessibilityRole="button" hitSlop={8} onPress={clearFilters}>
+                    <Text style={styles.linkText}>Clear</Text>
+                  </Pressable>
+                ) : null}
+              </View>
               {exercises.length === 0 ? (
-                <Text style={sharedStyles.small}>Create exercises from the Exercises tab before logging sets.</Text>
+                <Text style={sharedStyles.small}>Starter exercises will appear after the catalog initializes.</Text>
               ) : (
-                <View style={styles.exercisePicker}>
-                  {exercises.map((exercise) => (
-                    <Pressable
-                      accessibilityRole="button"
-                      disabled={!activeWorkout || activeExerciseIds.has(exercise.id)}
-                      key={exercise.id}
-                      onPress={() => handleAddExercise(exercise.id)}
-                      style={({ pressed }) => [
-                        styles.exerciseChip,
-                        activeExerciseIds.has(exercise.id) && styles.exerciseChipSelected,
-                        (!activeWorkout || activeExerciseIds.has(exercise.id)) && styles.exerciseChipDisabled,
-                        pressed && styles.pressed,
-                      ]}
-                    >
-                      <Text style={styles.exerciseChipText}>{exercise.name}</Text>
-                    </Pressable>
-                  ))}
+                <View style={styles.pickerStack}>
+                  <TextInput onChangeText={setQuery} placeholder="Search exercises" style={sharedStyles.input} value={query} />
+                  <View style={styles.filterGroup}>
+                    <Text style={sharedStyles.label}>Muscle</Text>
+                    <View style={styles.filterChips}>
+                      <FilterChip label="All" selected={!muscleGroupFilter} onPress={() => setMuscleGroupFilter(null)} />
+                      {filterOptions.muscleGroups.map((option) => (
+                        <FilterChip
+                          key={option}
+                          label={option}
+                          selected={muscleGroupFilter === option}
+                          onPress={() => setMuscleGroupFilter(option)}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                  <View style={styles.filterGroup}>
+                    <Text style={sharedStyles.label}>Equipment</Text>
+                    <View style={styles.filterChips}>
+                      <FilterChip label="All" selected={!equipmentFilter} onPress={() => setEquipmentFilter(null)} />
+                      {filterOptions.equipment.map((option) => (
+                        <FilterChip
+                          key={option}
+                          label={option}
+                          selected={equipmentFilter === option}
+                          onPress={() => setEquipmentFilter(option)}
+                        />
+                      ))}
+                    </View>
+                  </View>
+                  {filteredExercises.length === 0 ? (
+                    <Text style={sharedStyles.small}>No matching exercises. Adjust the search or filters.</Text>
+                  ) : (
+                    <View style={styles.exercisePicker}>
+                      {filteredExercises.map((exercise) => {
+                        const alreadyAdded = activeExerciseIds.has(exercise.id);
+                        const disabled = !activeWorkout || alreadyAdded;
+
+                        return (
+                          <Pressable
+                            accessibilityRole="button"
+                            disabled={disabled}
+                            key={exercise.id}
+                            onPress={() => handleAddExercise(exercise.id)}
+                            style={({ pressed }) => [
+                              styles.exerciseChip,
+                              alreadyAdded && styles.exerciseChipSelected,
+                              disabled && styles.exerciseChipDisabled,
+                              pressed && styles.pressed,
+                            ]}
+                          >
+                            <Text style={styles.exerciseChipText}>{exercise.name}</Text>
+                            <Text style={styles.exerciseChipMeta}>
+                              {alreadyAdded
+                                ? 'Already added'
+                                : activeWorkout
+                                  ? exerciseMetadataSummary(exercise)
+                                  : 'Start workout to add'}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
                 </View>
               )}
             </View>
@@ -231,9 +301,21 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.sm,
   },
+  pickerStack: {
+    gap: spacing.sm,
+  },
+  filterGroup: {
+    gap: spacing.xs,
+  },
+  filterChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
   exerciseChip: {
     backgroundColor: colors.surfaceAlt,
-    borderRadius: 999,
+    borderRadius: 14,
+    maxWidth: '100%',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
@@ -246,6 +328,11 @@ const styles = StyleSheet.create({
   exerciseChipText: {
     color: colors.text,
     fontWeight: '700',
+  },
+  exerciseChipMeta: {
+    color: colors.muted,
+    fontSize: 12,
+    marginTop: 2,
   },
   pressed: {
     opacity: 0.75,

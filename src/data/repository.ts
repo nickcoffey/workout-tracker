@@ -1,7 +1,9 @@
 import * as SQLite from 'expo-sqlite';
 
+import { starterExercisesMissingFrom } from './exerciseCatalog';
 import {
   Exercise,
+  ExerciseMetadataInput,
   ExerciseProgress,
   SetEntry,
   Workout,
@@ -16,6 +18,8 @@ type ExerciseRow = {
   id: number;
   name: string;
   category: string | null;
+  muscle_group: string | null;
+  equipment: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -59,11 +63,17 @@ function now(): string {
   return new Date().toISOString();
 }
 
+function cleanOptional(value?: string): string | null {
+  return value?.trim() || null;
+}
+
 function mapExercise(row: ExerciseRow): Exercise {
   return {
     id: row.id,
     name: row.name,
     category: row.category,
+    muscleGroup: row.muscle_group,
+    equipment: row.equipment,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -86,6 +96,41 @@ async function getDatabase(): Promise<Database> {
   return databasePromise;
 }
 
+async function ensureExerciseMetadataColumns(db: Database): Promise<void> {
+  const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(exercises)');
+  const columnNames = new Set(columns.map((column) => column.name));
+
+  if (!columnNames.has('muscle_group')) {
+    await db.execAsync('ALTER TABLE exercises ADD COLUMN muscle_group TEXT');
+  }
+
+  if (!columnNames.has('equipment')) {
+    await db.execAsync('ALTER TABLE exercises ADD COLUMN equipment TEXT');
+  }
+}
+
+async function seedStarterExercises(db: Database): Promise<void> {
+  const timestamp = now();
+  const existingExercises = await db.getAllAsync<{ name: string }>('SELECT name FROM exercises');
+  const missingStarterExercises = starterExercisesMissingFrom(existingExercises.map((exercise) => exercise.name));
+
+  await db.withTransactionAsync(async () => {
+    for (const exercise of missingStarterExercises) {
+      await db.runAsync(
+        `INSERT OR IGNORE INTO exercises
+          (name, category, muscle_group, equipment, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?)`,
+        exercise.name,
+        null,
+        exercise.muscleGroup,
+        exercise.equipment,
+        timestamp,
+        timestamp,
+      );
+    }
+  });
+}
+
 export async function initializeDatabase(): Promise<void> {
   const db = await getDatabase();
 
@@ -96,6 +141,8 @@ export async function initializeDatabase(): Promise<void> {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE COLLATE NOCASE,
       category TEXT,
+      muscle_group TEXT,
+      equipment TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -130,6 +177,9 @@ export async function initializeDatabase(): Promise<void> {
       FOREIGN KEY (workout_exercise_id) REFERENCES workout_exercises(id) ON DELETE CASCADE
     );
   `);
+
+  await ensureExerciseMetadataColumns(db);
+  await seedStarterExercises(db);
 }
 
 export async function listExercisesWithProgress(): Promise<ExerciseProgress[]> {
@@ -139,6 +189,8 @@ export async function listExercisesWithProgress(): Promise<ExerciseProgress[]> {
       e.id,
       e.name,
       e.category,
+      e.muscle_group,
+      e.equipment,
       e.created_at,
       e.updated_at,
       COUNT(se.id) AS total_sets,
@@ -160,13 +212,20 @@ export async function listExercisesWithProgress(): Promise<ExerciseProgress[]> {
   }));
 }
 
-export async function createExercise(name: string, category?: string): Promise<Exercise> {
+export async function createExercise(name: string, metadata: ExerciseMetadataInput = {}): Promise<Exercise> {
   const db = await getDatabase();
   const timestamp = now();
+  const category = cleanOptional(metadata.category);
+  const muscleGroup = cleanOptional(metadata.muscleGroup);
+  const equipment = cleanOptional(metadata.equipment);
   const result = await db.runAsync(
-    'INSERT INTO exercises (name, category, created_at, updated_at) VALUES (?, ?, ?, ?)',
+    `INSERT INTO exercises
+      (name, category, muscle_group, equipment, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)`,
     name.trim(),
-    category?.trim() || null,
+    category,
+    muscleGroup,
+    equipment,
     timestamp,
     timestamp,
   );
@@ -174,18 +233,24 @@ export async function createExercise(name: string, category?: string): Promise<E
   return {
     id: result.lastInsertRowId,
     name: name.trim(),
-    category: category?.trim() || null,
+    category,
+    muscleGroup,
+    equipment,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
 }
 
-export async function updateExercise(id: number, name: string, category?: string): Promise<void> {
+export async function updateExercise(id: number, name: string, metadata: ExerciseMetadataInput = {}): Promise<void> {
   const db = await getDatabase();
   await db.runAsync(
-    'UPDATE exercises SET name = ?, category = ?, updated_at = ? WHERE id = ?',
+    `UPDATE exercises
+      SET name = ?, category = ?, muscle_group = ?, equipment = ?, updated_at = ?
+      WHERE id = ?`,
     name.trim(),
-    category?.trim() || null,
+    cleanOptional(metadata.category),
+    cleanOptional(metadata.muscleGroup),
+    cleanOptional(metadata.equipment),
     now(),
     id,
   );

@@ -2,8 +2,16 @@ export type Exercise = {
   id: number;
   name: string;
   category: string | null;
+  muscleGroup: string | null;
+  equipment: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type ExerciseMetadataInput = {
+  category?: string;
+  muscleGroup?: string;
+  equipment?: string;
 };
 
 export type Workout = {
