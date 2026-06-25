@@ -10,6 +10,7 @@ import {
   getActiveWorkout,
   initializeDatabase,
   listExercisesWithProgress,
+  removeExerciseFromWorkout,
   startWorkout,
   updateSetEntry,
 } from '../../src/data/repository';
@@ -282,12 +283,10 @@ function ExercisePickerModal({
 function ActiveExerciseCard({ exercise, onChanged }: { exercise: WorkoutExerciseWithSets; onChanged: () => Promise<void> }) {
   const [reps, setReps] = useState('');
   const [weight, setWeight] = useState('');
-  const [notes, setNotes] = useState('');
 
   function resetForm() {
     setReps('');
     setWeight('');
-    setNotes('');
   }
 
   async function saveSet() {
@@ -299,7 +298,7 @@ function ActiveExerciseCard({ exercise, onChanged }: { exercise: WorkoutExercise
       return;
     }
 
-    await addSetEntry(exercise.id, parsedReps, parsedWeight, notes);
+    await addSetEntry(exercise.id, parsedReps, parsedWeight);
 
     Keyboard.dismiss();
     resetForm();
@@ -322,6 +321,30 @@ function ActiveExerciseCard({ exercise, onChanged }: { exercise: WorkoutExercise
     await onChanged();
   }
 
+  async function confirmRemoveExercise() {
+    await removeExerciseFromWorkout(exercise.id);
+    await onChanged();
+  }
+
+  function promptRemoveExercise() {
+    const setCount = exercise.sets.length;
+    const message =
+      setCount > 0
+        ? `This will remove ${exercise.exerciseName} and its ${setCount} logged ${setCount === 1 ? 'set' : 'sets'} from this workout.`
+        : `This will remove ${exercise.exerciseName} from this workout.`;
+
+    Alert.alert(`Remove ${exercise.exerciseName}?`, message, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: () => {
+          void confirmRemoveExercise();
+        },
+      },
+    ]);
+  }
+
   return (
     <View style={sharedStyles.card}>
       <View style={styles.exerciseCardHeader}>
@@ -331,7 +354,10 @@ function ActiveExerciseCard({ exercise, onChanged }: { exercise: WorkoutExercise
             {exercise.sets.length === 0 ? 'No sets logged for this exercise yet.' : `${exercise.sets.length} sets logged`}
           </Text>
         </View>
-        {exercise.sets.length > 0 ? <AppButton label="Repeat" onPress={repeatLatestSet} variant="secondary" /> : null}
+        <View style={styles.exerciseActions}>
+          {exercise.sets.length > 0 ? <AppButton label="Repeat" onPress={repeatLatestSet} variant="secondary" /> : null}
+          <AppButton label="Remove" onPress={promptRemoveExercise} variant="danger" />
+        </View>
       </View>
 
       {exercise.sets.map((set) => (
@@ -354,7 +380,6 @@ function ActiveExerciseCard({ exercise, onChanged }: { exercise: WorkoutExercise
           value={weight}
         />
       </View>
-      <TextInput onChangeText={setNotes} placeholder="Notes (optional)" style={sharedStyles.input} value={notes} />
       <View style={styles.formActions}>
         <AppButton label="Add Set" onPress={saveSet} />
       </View>
@@ -366,19 +391,16 @@ function EditableSetRow({ set, onChanged, onDelete }: { set: SetEntry; onChanged
   const [isEditing, setIsEditing] = useState(false);
   const [editReps, setEditReps] = useState(String(set.reps));
   const [editWeight, setEditWeight] = useState(String(set.weight));
-  const [editNotes, setEditNotes] = useState(set.notes ?? '');
 
   function beginEdit() {
     setEditReps(String(set.reps));
     setEditWeight(String(set.weight));
-    setEditNotes(set.notes ?? '');
     setIsEditing(true);
   }
 
   function cancelEdit() {
     setEditReps(String(set.reps));
     setEditWeight(String(set.weight));
-    setEditNotes(set.notes ?? '');
     setIsEditing(false);
   }
 
@@ -391,7 +413,7 @@ function EditableSetRow({ set, onChanged, onDelete }: { set: SetEntry; onChanged
       return;
     }
 
-    await updateSetEntry(set.id, parsedReps, parsedWeight, editNotes);
+    await updateSetEntry(set.id, parsedReps, parsedWeight, set.notes ?? undefined);
     Keyboard.dismiss();
     setIsEditing(false);
     await onChanged();
@@ -418,7 +440,6 @@ function EditableSetRow({ set, onChanged, onDelete }: { set: SetEntry; onChanged
               value={editWeight}
             />
           </View>
-          <TextInput onChangeText={setEditNotes} placeholder="Notes (optional)" style={sharedStyles.input} value={editNotes} />
           <View style={styles.formActions}>
             <AppButton label="Cancel" onPress={cancelEdit} variant="secondary" />
             <AppButton label="Save" onPress={saveEdit} />
@@ -429,7 +450,6 @@ function EditableSetRow({ set, onChanged, onDelete }: { set: SetEntry; onChanged
           <Text style={styles.setText}>
             Set {set.setNumber}: {set.reps} reps at {set.weight} lb
           </Text>
-          {set.notes ? <Text style={sharedStyles.small}>{set.notes}</Text> : null}
           <View style={styles.setActions}>
             <Pressable accessibilityRole="button" onPress={beginEdit} hitSlop={8}>
               <Text style={styles.linkText}>Edit</Text>
@@ -535,6 +555,12 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.md,
     justifyContent: 'space-between',
+  },
+  exerciseActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    justifyContent: 'flex-end',
   },
   setText: {
     color: colors.text,

@@ -1,6 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 
 import { starterExercisesMissingFrom } from './exerciseCatalog';
+import { renumberPositions } from './workoutOrder';
 import {
   Exercise,
   ExerciseMetadataInput,
@@ -317,6 +318,34 @@ export async function addExerciseToWorkout(workoutId: number, exerciseId: number
     positionRow?.next_position ?? 1,
     now(),
   );
+}
+
+export async function removeExerciseFromWorkout(workoutExerciseId: number): Promise<void> {
+  const db = await getDatabase();
+
+  await db.withTransactionAsync(async () => {
+    const existing = await db.getFirstAsync<{ workout_id: number }>(
+      'SELECT workout_id FROM workout_exercises WHERE id = ?',
+      workoutExerciseId,
+    );
+
+    if (!existing) {
+      return;
+    }
+
+    await db.runAsync('DELETE FROM workout_exercises WHERE id = ?', workoutExerciseId);
+
+    const remainingExercises = await db.getAllAsync<{ id: number; position: number }>(
+      'SELECT id, position FROM workout_exercises WHERE workout_id = ? ORDER BY position ASC, id ASC',
+      existing.workout_id,
+    );
+
+    await Promise.all(
+      renumberPositions(remainingExercises).map((exercise) =>
+        db.runAsync('UPDATE workout_exercises SET position = ? WHERE id = ?', exercise.position, exercise.id),
+      ),
+    );
+  });
 }
 
 export async function addSetEntry(

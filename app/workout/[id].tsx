@@ -58,7 +58,6 @@ function WorkoutExerciseCard({ exercise }: { exercise: WorkoutExerciseWithSets }
           <Text style={sharedStyles.body}>
             Set {set.setNumber}: {set.reps} reps at {set.weight} lb
           </Text>
-          {set.notes ? <Text style={sharedStyles.small}>{set.notes}</Text> : null}
         </View>
       ))}
     </View>
